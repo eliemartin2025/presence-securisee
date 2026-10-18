@@ -10,10 +10,12 @@
     body { font-family: Arial, sans-serif; max-width: 420px; margin: 40px auto; padding: 0 16px; }
     .logo { display: block; width: 70%; max-width: 240px; margin: 0 auto 20px; }
     h1 { text-align: center; font-size: 22px; }
-    input, button { width: 100%; padding: 12px; margin: 6px 0; font-size: 16px; box-sizing: border-box; }
+    h2 { font-size: 18px; margin-top: 28px; }
+    input, select, button { width: 100%; padding: 12px; margin: 6px 0; font-size: 16px; box-sizing: border-box; }
     button { background: #1a5fb4; color: #fff; border: 0; border-radius: 6px; }
-    #message { color: #c01c28; min-height: 24px; }
+    #message, #addMsg { color: #c01c28; min-height: 24px; }
     #dashboard { display: none; }
+    li { padding: 6px 0; border-bottom: 1px solid #ddd; }
   </style>
 </head>
 <body>
@@ -30,6 +32,19 @@
   <div id="dashboard">
     <p>Bienvenue <strong id="userName"></strong> (<span id="userRole"></span>)</p>
     <button id="logoutBtn">Se déconnecter</button>
+
+    <h2>Ajouter une personne</h2>
+    <input id="pName" type="text" placeholder="Nom complet">
+    <select id="pType">
+      <option value="teacher">Enseignant</option>
+      <option value="student">Élève</option>
+    </select>
+    <input id="pClass" type="text" placeholder="Classe (facultatif)">
+    <button id="addBtn">Ajouter</button>
+    <p id="addMsg"></p>
+
+    <h2>Personnes enregistrées</h2>
+    <ul id="peopleList"></ul>
   </div>
 
   <script>
@@ -41,10 +56,31 @@
     const loginDiv = document.getElementById("login");
     const dashboardDiv = document.getElementById("dashboard");
     const message = document.getElementById("message");
+    const addMsg = document.getElementById("addMsg");
+    const peopleList = document.getElementById("peopleList");
 
     function showLogin() {
       dashboardDiv.style.display = "none";
       loginDiv.style.display = "block";
+    }
+
+    async function loadPeople() {
+      peopleList.innerHTML = "";
+      const { data, error } = await db
+        .from("people")
+        .select("id, name, person_type, class_name")
+        .order("id");
+
+      if (error) {
+        addMsg.textContent = "Impossible de charger la liste : " + error.message;
+        return;
+      }
+      data.forEach(p => {
+        const li = document.createElement("li");
+        const type = p.person_type === "teacher" ? "Enseignant" : "Élève";
+        li.textContent = p.name + " — " + type + (p.class_name ? " (" + p.class_name + ")" : "");
+        peopleList.appendChild(li);
+      });
     }
 
     async function showDashboard(user) {
@@ -66,6 +102,7 @@
       loginDiv.style.display = "none";
       dashboardDiv.style.display = "block";
       message.textContent = "";
+      await loadPeople();
     }
 
     document.getElementById("loginBtn").addEventListener("click", async () => {
@@ -84,7 +121,37 @@
     document.getElementById("logoutBtn").addEventListener("click", async () => {
       await db.auth.signOut();
       document.getElementById("password").value = "";
+      peopleList.innerHTML = "";
       showLogin();
+    });
+
+    document.getElementById("addBtn").addEventListener("click", async () => {
+      addMsg.textContent = "";
+      const name = document.getElementById("pName").value.trim();
+      const personType = document.getElementById("pType").value;
+      const className = document.getElementById("pClass").value.trim();
+
+      if (!name) {
+        addMsg.textContent = "Saisis un nom.";
+        return;
+      }
+
+      const { error } = await db.from("people").insert({
+        name: name,
+        person_type: personType,
+        class_name: className || null
+      });
+
+      if (error) {
+        addMsg.textContent = "Ajout impossible : " + error.message;
+        return;
+      }
+
+      document.getElementById("pName").value = "";
+      document.getElementById("pClass").value = "";
+      addMsg.style.color = "#1a7f37";
+      addMsg.textContent = "Personne ajoutée.";
+      await loadPeople();
     });
 
     db.auth.getSession().then(({ data }) => {
