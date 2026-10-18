@@ -6,159 +6,136 @@
   <title>Présence Sécurisée Éducation</title>
   <link rel="icon" href="logo.png">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.0/dist/umd/supabase.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
   <style>
-    body { font-family: Arial, sans-serif; max-width: 420px; margin: 40px auto; padding: 0 16px; }
-    .logo { display: block; width: 70%; max-width: 240px; margin: 0 auto 20px; }
+    body { font-family: Arial, sans-serif; max-width: 480px; margin: 30px auto; padding: 0 16px; color: #222; }
+    .logo { display: block; width: 60%; max-width: 220px; margin: 0 auto 16px; }
     h1 { text-align: center; font-size: 22px; }
-    h2 { font-size: 18px; margin-top: 28px; }
-    input, select, button { width: 100%; padding: 12px; margin: 6px 0; font-size: 16px; box-sizing: border-box; }
+    h2 { font-size: 18px; margin-top: 26px; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+    h3 { font-size: 16px; margin-top: 18px; }
+    input, select, textarea, button { width: 100%; padding: 12px; margin: 6px 0; font-size: 16px; box-sizing: border-box; }
+    textarea { min-height: 60px; }
     button { background: #1a5fb4; color: #fff; border: 0; border-radius: 6px; }
-    #message, #addMsg { color: #c01c28; min-height: 24px; }
-    #dashboard { display: none; }
-    li { padding: 6px 0; border-bottom: 1px solid #ddd; }
+    button.secondary { background: #555; }
+    .row button { width: auto; display: inline-block; margin-right: 6px; padding: 8px 12px; font-size: 14px; }
+    .msg { min-height: 20px; color: #c01c28; margin: 4px 0; }
+    .ok { color: #1a7f37; }
+    .small { font-size: 13px; color: #555; }
+    .entry { border: 1px solid #ddd; border-radius: 6px; padding: 8px; margin: 6px 0; }
+    #dashboard, #login, #adminZone, #listArea, #scanZone { display: none; }
+    video { width: 100%; border-radius: 6px; background: #000; }
+    .headerView { border: 1px solid #ddd; border-radius: 6px; padding: 8px; margin: 8px 0; }
+    @media print {
+      .no-print { display: none !important; }
+      body { max-width: none; margin: 0; }
+      button { display: none; }
+    }
   </style>
 </head>
 <body>
-  <img src="logo.png" alt="Logo Elie3M Digital" class="logo">
+  <img src="logo.png" alt="Logo Elie3M Digital" class="logo no-print">
   <h1>Présence Sécurisée Éducation</h1>
 
-  <div id="login">
+  <!-- CONNEXION -->
+  <div id="login" style="display:block">
     <input id="email" type="email" placeholder="Adresse e-mail" autocomplete="username">
     <input id="password" type="password" placeholder="Mot de passe" autocomplete="current-password">
     <button id="loginBtn">Se connecter</button>
-    <p id="message"></p>
+    <p id="message" class="msg"></p>
   </div>
 
+  <!-- TABLEAU DE BORD -->
   <div id="dashboard">
     <p>Bienvenue <strong id="userName"></strong> (<span id="userRole"></span>)</p>
-    <button id="logoutBtn">Se déconnecter</button>
+    <button id="logoutBtn" class="secondary no-print">Se déconnecter</button>
 
-    <h2>Ajouter une personne</h2>
-    <input id="pName" type="text" placeholder="Nom complet">
-    <select id="pType">
-      <option value="teacher">Enseignant</option>
-      <option value="student">Élève</option>
-    </select>
-    <input id="pClass" type="text" placeholder="Classe (facultatif)">
-    <button id="addBtn">Ajouter</button>
-    <p id="addMsg"></p>
+    <!-- ZONE ADMINISTRATEUR -->
+    <div id="adminZone">
+      <h2>Nouvelle liste</h2>
+      <input id="listTitle" type="text" placeholder="Titre de la liste">
+      <input id="listDesc" type="text" placeholder="Description (facultatif)">
+      <button id="createListBtn">Créer la liste</button>
+      <p id="listMsg" class="msg"></p>
 
-    <h2>Personnes enregistrées</h2>
-    <ul id="peopleList"></ul>
+      <h2>Scanner un QR code</h2>
+      <p class="small">La caméra ne sert qu'à lire le code imprimé. Elle ne reconnaît aucun visage.</p>
+      <button id="scanBtn">Scanner un QR code</button>
+      <div id="scanZone">
+        <video id="video" playsinline muted></video>
+        <button id="stopScanBtn" class="secondary">Arrêter le scan</button>
+      </div>
+      <p id="scanResult" class="msg"></p>
+
+      <h2>Tableau général</h2>
+      <p>Personnes inscrites (toutes listes) : <strong id="globalCount">0</strong></p>
+      <p>Heures totales : <strong id="globalHours">0</strong></p>
+    </div>
+
+    <!-- LISTES -->
+    <h2>Listes</h2>
+    <select id="listSelect"></select>
+
+    <div id="listArea">
+      <h2 id="listTitleView"></h2>
+      <p id="listDate" class="small"></p>
+      <p>Inscrits : <strong id="listCount">0</strong> · Heures : <strong id="listHours">0</strong></p>
+
+      <h3>En-tête de la liste</h3>
+      <div id="headerView" class="headerView"></div>
+      <p id="headerDate" class="small"></p>
+      <div class="no-print">
+        <input id="hSchool" type="text" placeholder="Établissement">
+        <input id="hClass" type="text" placeholder="Classe">
+        <input id="hSubject" type="text" placeholder="Matière">
+        <textarea id="hNotes" placeholder="Notes"></textarea>
+        <button id="saveHeaderBtn">Enregistrer l'en-tête</button>
+        <p id="headerMsg" class="msg"></p>
+      </div>
+
+      <h3 class="no-print">Inscrire une personne</h3>
+      <div class="no-print">
+        <input id="pName" type="text" placeholder="Nom complet">
+        <button id="addEntryBtn">Inscrire</button>
+        <p id="entryMsg" class="msg"></p>
+      </div>
+
+      <h3>Inscrits</h3>
+      <div id="entriesTable"></div>
+
+      <div class="no-print">
+        <button id="printBtn">Imprimer / Enregistrer en PDF</button>
+        <button id="whatsappBtn" class="secondary">Partager sur WhatsApp</button>
+      </div>
+    </div>
   </div>
 
   <script>
     const SUPABASE_URL = "https://uuedkbuebpsefrbecout.supabase.co";
     const SUPABASE_KEY = "sb_publishable_9fA8vQN89sDDkC796XZ7Wg__DdHZrS4";
-
     const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-    const loginDiv = document.getElementById("login");
-    const dashboardDiv = document.getElementById("dashboard");
-    const message = document.getElementById("message");
-    const addMsg = document.getElementById("addMsg");
-    const peopleList = document.getElementById("peopleList");
+    let isAdmin = false;
+    let lists = [];
+    let allPersons = [];
+    let currentListId = null;
+    let currentEntries = [];
+    let scanning = false;
+    let scanStream = null;
+
+    const $ = id => document.getElementById(id);
+    const show = (id, visible) => { $(id).style.display = visible ? "block" : "none"; };
+    const setMsg = (id, text, ok) => { const el = $(id); el.textContent = text; el.className = ok ? "msg ok" : "msg"; };
+    const norm = s => s.trim().replace(/\s+/g, " ").toLowerCase();
+    const fmt = ts => ts ? new Date(ts).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" }) : "—";
+    const fmtDate = ts => ts ? new Date(ts).toLocaleDateString("fr-FR") : "—";
+
+    function btn(label, onClick, cls) {
+      const b = document.createElement("button");
+      b.textContent = label;
+      if (cls) b.className = cls;
+      b.onclick = onClick;
+      return b;
+    }
 
     function showLogin() {
-      dashboardDiv.style.display = "none";
-      loginDiv.style.display = "block";
-    }
-
-    async function loadPeople() {
-      peopleList.innerHTML = "";
-      const { data, error } = await db
-        .from("people")
-        .select("id, name, person_type, class_name")
-        .order("id");
-
-      if (error) {
-        addMsg.textContent = "Impossible de charger la liste : " + error.message;
-        return;
-      }
-      data.forEach(p => {
-        const li = document.createElement("li");
-        const type = p.person_type === "teacher" ? "Enseignant" : "Élève";
-        li.textContent = p.name + " — " + type + (p.class_name ? " (" + p.class_name + ")" : "");
-        peopleList.appendChild(li);
-      });
-    }
-
-    async function showDashboard(user) {
-      const { data: profile, error } = await db
-        .from("user_profiles")
-        .select("full_name, role")
-        .eq("id", user.id)
-        .single();
-
-      if (error || !profile) {
-        message.textContent = "Profil introuvable. Vérifie que le rôle a bien été attribué dans Supabase.";
-        await db.auth.signOut();
-        showLogin();
-        return;
-      }
-
-      document.getElementById("userName").textContent = profile.full_name;
-      document.getElementById("userRole").textContent = profile.role;
-      loginDiv.style.display = "none";
-      dashboardDiv.style.display = "block";
-      message.textContent = "";
-      await loadPeople();
-    }
-
-    document.getElementById("loginBtn").addEventListener("click", async () => {
-      message.textContent = "";
-      const email = document.getElementById("email").value.trim();
-      const password = document.getElementById("password").value;
-
-      const { data, error } = await db.auth.signInWithPassword({ email, password });
-      if (error) {
-        message.textContent = "Connexion impossible : " + error.message;
-        return;
-      }
-      await showDashboard(data.user);
-    });
-
-    document.getElementById("logoutBtn").addEventListener("click", async () => {
-      await db.auth.signOut();
-      document.getElementById("password").value = "";
-      peopleList.innerHTML = "";
-      showLogin();
-    });
-
-    document.getElementById("addBtn").addEventListener("click", async () => {
-      addMsg.textContent = "";
-      const name = document.getElementById("pName").value.trim();
-      const personType = document.getElementById("pType").value;
-      const className = document.getElementById("pClass").value.trim();
-
-      if (!name) {
-        addMsg.textContent = "Saisis un nom.";
-        return;
-      }
-
-      const { error } = await db.from("people").insert({
-        name: name,
-        person_type: personType,
-        class_name: className || null
-      });
-
-      if (error) {
-        addMsg.textContent = "Ajout impossible : " + error.message;
-        return;
-      }
-
-      document.getElementById("pName").value = "";
-      document.getElementById("pClass").value = "";
-      addMsg.style.color = "#1a7f37";
-      addMsg.textContent = "Personne ajoutée.";
-      await loadPeople();
-    });
-
-    db.auth.getSession().then(({ data }) => {
-      if (data.session) {
-        showDashboard(data.session.user);
-      }
-    });
-  </script>
-</body>
-</html>
+      show("dashboard", false);
