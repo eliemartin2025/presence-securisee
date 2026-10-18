@@ -6,25 +6,24 @@
   <title>Présence Sécurisée Éducation</title>
   <link rel="icon" href="logo.png">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.0/dist/umd/supabase.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
   <style>
     body { font-family: Arial, sans-serif; max-width: 480px; margin: 30px auto; padding: 0 16px; color: #222; }
     .logo { display: block; width: 60%; max-width: 220px; margin: 0 auto 16px; }
     h1 { text-align: center; font-size: 22px; }
     h2 { font-size: 18px; margin-top: 26px; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
     h3 { font-size: 16px; margin-top: 18px; }
-    input, select, textarea, button { width: 100%; padding: 12px; margin: 6px 0; font-size: 16px; box-sizing: border-box; }
-    textarea { min-height: 60px; }
+    input, select, button { width: 100%; padding: 12px; margin: 6px 0; font-size: 16px; box-sizing: border-box; }
     button { background: #1a5fb4; color: #fff; border: 0; border-radius: 6px; }
     button.secondary { background: #555; }
+    button:disabled { background: #999; }
     .row button { width: auto; display: inline-block; margin-right: 6px; padding: 8px 12px; font-size: 14px; }
     .msg { min-height: 20px; color: #c01c28; margin: 4px 0; }
     .ok { color: #1a7f37; }
     .small { font-size: 13px; color: #555; }
     .entry { border: 1px solid #ddd; border-radius: 6px; padding: 8px; margin: 6px 0; }
-    #dashboard, #adminZone, #listArea, #scanZone { display: none; }
-    video { width: 100%; border-radius: 6px; background: #000; }
-    .headerView { border: 1px solid #ddd; border-radius: 6px; padding: 8px; margin: 8px 0; }
+    .box { border: 1px solid #ddd; border-radius: 6px; padding: 8px; margin: 8px 0; }
+    canvas.sig { width: 100%; height: 180px; border: 2px dashed #999; border-radius: 6px; background: #fff; touch-action: none; }
+    #app, #adminView, #listArea, #entryBox, #sigPanel { display: none; }
     @media print {
       .no-print { display: none !important; }
       body { max-width: none; margin: 0; }
@@ -37,38 +36,47 @@
   <h1>Présence Sécurisée Éducation</h1>
 
   <!-- CONNEXION -->
-  <div id="login" style="display:block">
+  <div id="login">
     <input id="email" type="email" placeholder="Adresse e-mail" autocomplete="username">
     <input id="password" type="password" placeholder="Mot de passe" autocomplete="current-password">
     <button id="loginBtn">Se connecter</button>
-    <p id="message" class="msg"></p>
+    <p id="loginMsg" class="msg"></p>
   </div>
 
-  <!-- TABLEAU DE BORD -->
-  <div id="dashboard">
+  <!-- APPLICATION -->
+  <div id="app">
     <p>Bienvenue <strong id="userName"></strong> (<span id="userRole"></span>)</p>
     <button id="logoutBtn" class="secondary no-print">Se déconnecter</button>
 
-    <!-- ZONE ADMINISTRATEUR -->
-    <div id="adminZone">
-      <h2>Nouvelle liste</h2>
-      <input id="listTitle" type="text" placeholder="Titre de la liste">
-      <input id="listDesc" type="text" placeholder="Description (facultatif)">
-      <button id="createListBtn">Créer la liste</button>
+    <!-- TABLEAU ADMINISTRATEUR -->
+    <div id="adminView">
+      <h2>Modèles de liste (programmes)</h2>
+      <input id="tplName" type="text" placeholder="Nom du modèle, ex. Programme entrepreneurs">
+      <div id="builder" class="small"></div>
+      <input id="fLabel" type="text" placeholder="Intitulé de l'attribut">
+      <select id="fType">
+        <option value="text">Texte court</option>
+        <option value="phone">Téléphone</option>
+        <option value="date">Date</option>
+        <option value="choice">Liste de choix</option>
+        <option value="signature">Signature</option>
+      </select>
+      <input id="fChoices" type="text" placeholder="Choix séparés par des virgules (liste de choix)">
+      <label class="small"><input type="checkbox" id="fReq" style="width:auto"> Obligatoire</label>
+      <button id="addFieldBtn" class="secondary">Ajouter l'attribut</button>
+      <button id="saveTplBtn">Enregistrer le modèle</button>
+      <p id="tplMsg" class="msg"></p>
+
+      <h2>Créer une liste</h2>
+      <input id="lTitle" type="text" placeholder="Titre de la session, ex. Atelier du 25 octobre">
+      <select id="lTemplate"></select>
+      <select id="lResp"></select>
+      <button id="createListBtn">Créer et attribuer</button>
       <p id="listMsg" class="msg"></p>
 
-      <h2>Scanner un QR code</h2>
-      <p class="small">La caméra ne sert qu'à lire le code imprimé. Elle ne reconnaît aucun visage.</p>
-      <button id="scanBtn">Scanner un QR code</button>
-      <div id="scanZone">
-        <video id="video" playsinline muted></video>
-        <button id="stopScanBtn" class="secondary">Arrêter le scan</button>
-      </div>
-      <p id="scanResult" class="msg"></p>
-
       <h2>Tableau général</h2>
-      <p>Personnes inscrites (toutes listes) : <strong id="globalCount">0</strong></p>
-      <p>Heures totales : <strong id="globalHours">0</strong></p>
+      <p>Personnes inscrites (toutes listes) : <strong id="gCount">0</strong></p>
+      <p>Heures totales : <strong id="gHours">0</strong></p>
     </div>
 
     <!-- LISTES -->
@@ -77,26 +85,27 @@
 
     <div id="listArea">
       <h2 id="listTitleView"></h2>
-      <p id="listDate" class="small"></p>
-      <p>Inscrits : <strong id="listCount">0</strong> · Heures : <strong id="listHours">0</strong></p>
+      <p id="listInfo" class="small"></p>
+      <p>Inscrits : <strong id="lCount">0</strong> · Heures : <strong id="lHours">0</strong></p>
 
-      <h3>En-tête de la liste</h3>
-      <div id="headerView" class="headerView"></div>
-      <p id="headerDate" class="small"></p>
-      <div class="no-print">
-        <input id="hSchool" type="text" placeholder="Établissement">
-        <input id="hClass" type="text" placeholder="Classe">
-        <input id="hSubject" type="text" placeholder="Matière">
-        <textarea id="hNotes" placeholder="Notes"></textarea>
-        <button id="saveHeaderBtn">Enregistrer l'en-tête</button>
-        <p id="headerMsg" class="msg"></p>
+      <div id="adminCtrls" class="no-print" style="display:none">
+        <button id="toggleStatusBtn" class="secondary">Clôturer la liste</button>
       </div>
 
-      <h3 class="no-print">Inscrire une personne</h3>
-      <div class="no-print">
-        <input id="pName" type="text" placeholder="Nom complet">
-        <button id="addEntryBtn">Inscrire</button>
+      <!-- INSCRIPTION (responsable) -->
+      <div id="entryBox">
+        <h3>Inscrire une personne</h3>
+        <div id="entryFields"></div>
+        <button id="submitEntryBtn">Valider</button>
         <p id="entryMsg" class="msg"></p>
+
+        <div id="sigPanel" class="box">
+          <p class="small">La personne signe elle-même dans le cadre. Essai <span id="attemptNo">1</span> sur 3.</p>
+          <canvas id="sigCanvas" class="sig" width="600" height="180"></canvas>
+          <button id="sigClearBtn" class="secondary">Effacer</button>
+          <button id="sigOkBtn">Valider la signature</button>
+          <p id="sigMsg" class="msg"></p>
+        </div>
       </div>
 
       <h3>Inscrits</h3>
@@ -104,113 +113,168 @@
 
       <div class="no-print">
         <button id="printBtn">Imprimer / Enregistrer en PDF</button>
-        <button id="whatsappBtn" class="secondary">Partager sur WhatsApp</button>
+        <button id="waBtn" class="secondary">Partager sur WhatsApp</button>
       </div>
     </div>
   </div>
 
   <script>
-    // Affiche les erreurs à l'écran pour faciliter le diagnostic
-    window.onerror = (msg, src, line) => { alert("Erreur : " + msg + " (ligne " + line + ")"); };
-    if (typeof supabase === "undefined") {
-      alert("La bibliothèque Supabase ne s'est pas chargée. Vérifie ta connexion et recharge la page.");
-    }
+    window.onerror = (m, s, l) => alert("Erreur : " + m + " (ligne " + l + ")");
 
     const SUPABASE_URL = "https://uuedkbuebpsefrbecout.supabase.co";
     const SUPABASE_KEY = "sb_publishable_9fA8vQN89sDDkC796XZ7Wg__DdHZrS4";
     const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-    let isAdmin = false;
-    let lists = [];
-    let allPersons = [];
-    let currentListId = null;
-    let currentEntries = [];
-    let scanning = false;
-    let scanStream = null;
-
     const $ = id => document.getElementById(id);
-    const show = (id, visible) => { $(id).style.display = visible ? "block" : "none"; };
-    const setMsg = (id, text, ok) => { const el = $(id); el.textContent = text; el.className = ok ? "msg ok" : "msg"; };
-    const norm = s => s.trim().replace(/\s+/g, " ").toLowerCase();
+    const show = (id, v) => { $(id).style.display = v ? "block" : "none"; };
+    const setMsg = (id, t, ok) => { const e = $(id); e.textContent = t; e.className = ok ? "msg ok" : "msg"; };
     const fmt = ts => ts ? new Date(ts).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" }) : "—";
     const fmtDate = ts => ts ? new Date(ts).toLocaleDateString("fr-FR") : "—";
-
-    function btn(label, onClick, cls) {
+    const opt = (v, t) => { const o = document.createElement("option"); o.value = v; o.textContent = t; return o; };
+    function btn(label, fn, cls) {
       const b = document.createElement("button");
       b.textContent = label;
       if (cls) b.className = cls;
-      b.onclick = onClick;
+      b.onclick = fn;
       return b;
     }
 
-    function showLogin() {
-      show("dashboard", false);
-      show("login", true);
-    }
+    let me = null, isAdmin = false, lists = [], currentListId = null, currentList = null;
+    let fields = [], entries = [], builder = [];
+    let pendingEntry = null, attempts = 0, sigInk = false, drawing = false;
 
     // ---------- Connexion ----------
-    async function enterApp(user) {
-      const { data: profile, error } = await db
-        .from("user_profiles").select("full_name, role").eq("id", user.id).single();
+    $("loginBtn").onclick = async () => {
+      setMsg("loginMsg", "", true);
+      const { data, error } = await db.auth.signInWithPassword({
+        email: $("email").value.trim(),
+        password: $("password").value
+      });
+      if (error) { setMsg("loginMsg", "Connexion impossible : " + error.message, false); return; }
+      await enterApp(data.user);
+    };
 
-      if (error || !profile) {
-        setMsg("message", "Profil introuvable. Vérifie que le rôle a bien été attribué dans Supabase.", false);
+    $("logoutBtn").onclick = async () => {
+      await db.auth.signOut();
+      currentListId = null;
+      lists = [];
+      $("password").value = "";
+      show("app", false);
+      show("login", true);
+    };
+
+    async function enterApp(user) {
+      const { data: p, error } = await db.from("user_profiles")
+        .select("full_name, role").eq("id", user.id).single();
+      if (error || !p) {
+        setMsg("loginMsg", "Profil introuvable. Vérifie le rôle dans Supabase.", false);
         await db.auth.signOut();
-        showLogin();
         return;
       }
-
-      isAdmin = profile.role === "admin";
-      $("userName").textContent = profile.full_name;
+      me = { id: user.id, name: p.full_name, role: p.role };
+      isAdmin = p.role === "admin";
+      $("userName").textContent = p.full_name;
       $("userRole").textContent = isAdmin ? "administrateur" : "responsable";
-      show("adminZone", isAdmin);
       show("login", false);
-      show("dashboard", true);
-      setMsg("message", "", true);
-
-      await Promise.all([loadLists(), loadPersons()]);
-      if (isAdmin) await loadGlobalTotals();
+      show("app", true);
+      show("adminView", isAdmin);
+      show("adminCtrls", isAdmin);
+      if (isAdmin) { await loadAdminForms(); await loadGlobal(); }
+      await loadLists();
     }
 
-    $("loginBtn").addEventListener("click", async () => {
-      setMsg("message", "", true);
-      const email = $("email").value.trim();
-      const password = $("password").value;
-      const { data, error } = await db.auth.signInWithPassword({ email, password });
-      if (error) { setMsg("message", "Connexion impossible : " + error.message, false); return; }
-      await enterApp(data.user);
-    });
+    // ---------- Administrateur : modèles et listes ----------
+    async function loadAdminForms() {
+      const { data: tpls } = await db.from("list_templates").select("id, name").order("name");
+      $("lTemplate").innerHTML = "";
+      (tpls || []).forEach(t => $("lTemplate").appendChild(opt(t.id, t.name)));
 
-    $("logoutBtn").addEventListener("click", async () => {
-      await db.auth.signOut();
-      stopScan();
-      $("password").value = "";
-      currentListId = null;
-      showLogin();
-    });
+      const { data: resp } = await db.from("user_profiles")
+        .select("id, full_name").eq("role", "responsable").order("full_name");
+      $("lResp").innerHTML = "";
+      if (!resp || !resp.length) $("lResp").appendChild(opt("", "Aucun responsable : crée-le d'abord"));
+      (resp || []).forEach(r => $("lResp").appendChild(opt(r.id, r.full_name)));
+    }
 
-    // ---------- Chargement ----------
+    function renderBuilder() {
+      const b = $("builder");
+      b.style.whiteSpace = "pre-line";
+      b.textContent = builder.length
+        ? builder.map((f, i) => (i + 1) + ". " + f.label + " [" + f.field_type + "]" + (f.required ? " (obligatoire)" : "")).join("\n")
+        : "Aucun attribut pour le moment.";
+    }
+
+    $("addFieldBtn").onclick = () => {
+      const label = $("fLabel").value.trim();
+      if (!label) { setMsg("tplMsg", "Saisis un intitulé.", false); return; }
+      const type = $("fType").value;
+      const choices = type === "choice"
+        ? $("fChoices").value.split(",").map(s => s.trim()).filter(Boolean)
+        : null;
+      if (type === "choice" && !choices.length) { setMsg("tplMsg", "Indique les choix.", false); return; }
+      builder.push({ label, field_type: type, required: $("fReq").checked, choices });
+      $("fLabel").value = "";
+      $("fChoices").value = "";
+      $("fReq").checked = false;
+      renderBuilder();
+    };
+
+    $("saveTplBtn").onclick = async () => {
+      const name = $("tplName").value.trim();
+      if (!name || !builder.length) { setMsg("tplMsg", "Donne un nom et au moins un attribut.", false); return; }
+      const { data: t, error } = await db.from("list_templates").insert({ name }).select("id").single();
+      if (error) { setMsg("tplMsg", "Modèle impossible : " + error.message, false); return; }
+      const rows = builder.map((f, i) => ({
+        template_id: t.id, label: f.label, field_type: f.field_type,
+        required: f.required, position: i + 1, choices: f.choices
+      }));
+      const { error: e2 } = await db.from("template_fields").insert(rows);
+      if (e2) { setMsg("tplMsg", "Attributs impossibles : " + e2.message, false); return; }
+      builder = [];
+      renderBuilder();
+      $("tplName").value = "";
+      setMsg("tplMsg", "Modèle enregistré.", true);
+      await loadAdminForms();
+    };
+
+    $("createListBtn").onclick = async () => {
+      const title = $("lTitle").value.trim();
+      const tpl = $("lTemplate").value;
+      const resp = $("lResp").value;
+      if (!title || !tpl || !resp) { setMsg("listMsg", "Titre, modèle et responsable sont obligatoires.", false); return; }
+      const { data, error } = await db.from("lists")
+        .insert({ title, template_id: Number(tpl), assigned_to: resp, status: "open", is_open: true })
+        .select("id").single();
+      if (error) { setMsg("listMsg", "Création impossible : " + error.message, false); return; }
+      $("lTitle").value = "";
+      currentListId = data.id;
+      setMsg("listMsg", "Liste créée et attribuée.", true);
+      await loadLists();
+      await loadGlobal();
+      await loadList();
+    };
+
+    $("toggleStatusBtn").onclick = async () => {
+      const newStatus = currentList.status === "open" ? "closed" : "open";
+      const { error } = await db.from("lists")
+        .update({ status: newStatus, is_open: newStatus === "open" }).eq("id", currentListId);
+      if (error) { alert("Erreur : " + error.message); return; }
+      await loadLists();
+      await loadList();
+    };
+
+    // ---------- Chargement des listes et de la vue ----------
     async function loadLists() {
       const { data, error } = await db.from("lists")
-        .select("id, title, created_at, is_open")
+        .select("id, title, status, template_id, assigned_to, created_at")
         .order("created_at", { ascending: false });
-      if (error) { setMsg("listMsg", "Chargement des listes impossible : " + error.message, false); return; }
-
+      if (error) { alert("Chargement des listes impossible : " + error.message); return; }
       lists = data || [];
       const sel = $("listSelect");
       sel.innerHTML = "";
-      const first = document.createElement("option");
-      first.value = "";
-      first.textContent = lists.length ? "Choisir une liste" : "Aucune liste pour le moment";
-      sel.appendChild(first);
-
-      lists.forEach(l => {
-        const o = document.createElement("option");
-        o.value = l.id;
-        o.textContent = l.title + " (" + fmtDate(l.created_at) + ")" + (l.is_open ? "" : " - fermée");
-        sel.appendChild(o);
-      });
-
+      sel.appendChild(opt("", lists.length ? "Choisir une liste" : "Aucune liste pour le moment"));
+      lists.forEach(l => sel.appendChild(opt(l.id,
+        l.title + " (" + fmtDate(l.created_at) + ")" + (l.status === "closed" ? " - fermée" : ""))));
       if (currentListId && lists.some(l => l.id == currentListId)) {
         sel.value = currentListId;
       } else {
@@ -219,281 +283,270 @@
       }
     }
 
-    async function loadPersons() {
-      const { data } = await db.from("persons").select("id, full_name").order("full_name");
-      allPersons = data || [];
-    }
+    $("listSelect").onchange = async () => {
+      currentListId = $("listSelect").value || null;
+      await loadList();
+    };
 
-    async function loadGlobalTotals() {
+    async function loadGlobal() {
+      if (!isAdmin) return;
       const { data } = await db.from("list_totals").select("registered_count, total_hours");
-      let count = 0, hours = 0;
-      (data || []).forEach(r => { count += Number(r.registered_count); hours += Number(r.total_hours); });
-      $("globalCount").textContent = count;
-      $("globalHours").textContent = hours.toFixed(2);
+      let c = 0, h = 0;
+      (data || []).forEach(r => { c += Number(r.registered_count); h += Number(r.total_hours); });
+      $("gCount").textContent = c;
+      $("gHours").textContent = h.toFixed(2);
     }
 
-    async function loadListView() {
-      const list = lists.find(l => l.id == currentListId);
-      if (!list) { show("listArea", false); return; }
+    async function loadList() {
+      currentList = lists.find(l => l.id == currentListId) || null;
+      if (!currentList) { show("listArea", false); return; }
       show("listArea", true);
 
-      $("listTitleView").textContent = list.title;
-      $("listDate").textContent = "Liste créée le " + fmtDate(list.created_at) + (list.is_open ? "" : " — fermée");
+      $("listTitleView").textContent = currentList.title;
+      $("listInfo").textContent = "Créée le " + fmtDate(currentList.created_at) + " · " +
+        (currentList.status === "open" ? "ouverte" : "clôturée");
+      $("toggleStatusBtn").textContent = currentList.status === "open" ? "Clôturer la liste" : "Réouvrir la liste";
 
-      ["hSchool", "hClass", "hSubject", "hNotes", "saveHeaderBtn", "pName", "addEntryBtn"].forEach(id => {
-        $(id).disabled = !list.is_open;
-      });
+      const { data: f } = await db.from("template_fields")
+        .select("*").eq("template_id", currentList.template_id).order("position");
+      fields = f || [];
+      renderEntryForm();
 
-      await loadHeader();
-      await refreshTotals();
-      await loadEntries();
+      show("entryBox", !isAdmin && currentList.status === "open" && currentList.assigned_to === me.id);
+      await afterChange();
     }
 
-    async function loadHeader() {
-      const { data: h } = await db.from("list_headers").select("*").eq("list_id", currentListId).maybeSingle();
-      $("hSchool").value = h?.school_name || "";
-      $("hClass").value = h?.class_name || "";
-      $("hSubject").value = h?.subject || "";
-      $("hNotes").value = h?.notes || "";
-
-      const lines = [];
-      if (h?.school_name) lines.push("Établissement : " + h.school_name);
-      if (h?.class_name) lines.push("Classe : " + h.class_name);
-      if (h?.subject) lines.push("Matière : " + h.subject);
-      if (h?.notes) lines.push("Notes : " + h.notes);
-      $("headerView").textContent = lines.length ? lines.join("\n") : "En-tête non renseigné.";
-      $("headerView").style.whiteSpace = "pre-line";
-      $("headerDate").textContent = h ? "En-tête mis à jour le " + fmt(h.updated_at) : "";
+    async function afterChange() {
+      await refreshTotals();
+      await loadEntries();
     }
 
     async function refreshTotals() {
       const { data: t } = await db.from("list_totals")
         .select("registered_count, total_hours").eq("list_id", currentListId).maybeSingle();
-      $("listCount").textContent = t?.registered_count ?? 0;
-      $("listHours").textContent = t?.total_hours ?? 0;
-      if (isAdmin) await loadGlobalTotals();
+      $("lCount").textContent = t ? t.registered_count : 0;
+      $("lHours").textContent = t ? t.total_hours : 0;
+      await loadGlobal();
     }
 
     async function loadEntries() {
       const box = $("entriesTable");
       box.innerHTML = "";
       const { data, error } = await db.from("list_entries")
-        .select("id, full_name, person_id, arrived_at, departed_at, scan_code")
-        .eq("list_id", currentListId)
-        .order("created_at");
-
+        .select("id, full_name, arrived_at, departed_at").eq("list_id", currentListId).order("created_at");
       if (error) { box.textContent = "Erreur : " + error.message; return; }
-      currentEntries = data || [];
-      if (!currentEntries.length) { box.textContent = "Aucune personne inscrite pour le moment."; return; }
+      entries = data || [];
+      if (!entries.length) { box.textContent = "Aucune personne inscrite pour le moment."; return; }
 
-      const ids = currentEntries.map(e => e.person_id).filter(Boolean);
-      const counts = {};
-      if (ids.length) {
-        const { data: pt } = await db.from("person_presence_totals")
-          .select("person_id, registrations_count").in("person_id", ids);
-        (pt || []).forEach(r => counts[r.person_id] = r.registrations_count);
-      }
+      const { data: sigs } = await db.from("signatures").select("entry_id").in("entry_id", entries.map(e => e.id));
+      const signed = new Set((sigs || []).map(s => s.entry_id));
 
-      currentEntries.forEach(e => {
+      entries.forEach(e => {
         const card = document.createElement("div");
         card.className = "entry";
-
         const name = document.createElement("strong");
         name.textContent = e.full_name;
         card.appendChild(name);
 
         const info = document.createElement("div");
         info.className = "small";
-        let txt = "Arrivée : " + fmt(e.arrived_at) + " · Départ : " + fmt(e.departed_at);
-        if (counts[e.person_id]) txt += " · inscrit " + counts[e.person_id] + " fois";
-        info.textContent = txt;
+        info.textContent = "Arrivée : " + fmt(e.arrived_at) + " · Départ : " + fmt(e.departed_at) +
+          " · Signature : " + (signed.has(e.id) ? "oui" : "non");
         card.appendChild(info);
 
         if (isAdmin) {
-          const code = document.createElement("div");
-          code.className = "small no-print";
-          code.textContent = "Code : " + e.scan_code;
-          card.appendChild(code);
-
+          const dt = document.createElement("input");
+          dt.type = "datetime-local";
+          dt.className = "no-print";
+          card.appendChild(dt);
           const row = document.createElement("div");
           row.className = "row no-print";
-          row.appendChild(btn("Arrivée", () => setTime(e.id, "arrived_at")));
-          row.appendChild(btn("Départ", () => setTime(e.id, "departed_at"), "secondary"));
+          row.appendChild(btn("Arrivée", () => setTime(e.id, "arrived_at", dt.value)));
+          row.appendChild(btn("Départ", () => setTime(e.id, "departed_at", dt.value), "secondary"));
           card.appendChild(row);
         }
         box.appendChild(card);
       });
     }
 
-    // ---------- Actions responsable / administrateur ----------
-    $("listSelect").addEventListener("change", async () => {
-      currentListId = $("listSelect").value || null;
-      if (currentListId) await loadListView(); else show("listArea", false);
-    });
+    async function setTime(id, field, localValue) {
+      const iso = localValue ? new Date(localValue).toISOString() : new Date().toISOString();
+      const { error } = await db.from("list_entries").update({ [field]: iso }).eq("id", id);
+      if (error) { alert("Erreur : " + error.message); return; }
+      await afterChange();
+    }
 
-    $("saveHeaderBtn").addEventListener("click", async () => {
-      const payload = {
-        list_id: currentListId,
-        school_name: $("hSchool").value.trim() || null,
-        class_name: $("hClass").value.trim() || null,
-        subject: $("hSubject").value.trim() || null,
-        notes: $("hNotes").value.trim() || null
-      };
-      const { error } = await db.from("list_headers").upsert(payload, { onConflict: "list_id" });
-      if (error) { setMsg("headerMsg", "Enregistrement impossible : " + error.message, false); return; }
-      setMsg("headerMsg", "En-tête enregistré.", true);
-      await loadHeader();
-    });
+    // ---------- Formulaire d'inscription (responsable) ----------
+    function renderEntryForm() {
+      const box = $("entryFields");
+      box.innerHTML = "";
+      fields.filter(f => f.field_type !== "signature").forEach(f => {
+        const lab = document.createElement("label");
+        lab.className = "small";
+        lab.textContent = f.label + (f.required ? " *" : "");
+        let input;
+        if (f.field_type === "choice") {
+          input = document.createElement("select");
+          input.appendChild(opt("", "Choisir…"));
+          (f.choices || []).forEach(c => input.appendChild(opt(c, c)));
+        } else {
+          input = document.createElement("input");
+          input.type = f.field_type === "phone" ? "tel" : f.field_type === "date" ? "date" : "text";
+        }
+        input.dataset.fieldId = f.id;
+        box.appendChild(lab);
+        box.appendChild(input);
+      });
+      const hasSig = fields.some(f => f.field_type === "signature");
+      $("submitEntryBtn").textContent = hasSig ? "Continuer vers la signature" : "Valider l'inscription";
+      $("submitEntryBtn").disabled = false;
+      show("sigPanel", false);
+      pendingEntry = null;
+    }
 
-    $("addEntryBtn").addEventListener("click", async () => {
-      const raw = $("pName").value.trim();
-      if (!raw) { setMsg("entryMsg", "Saisis un nom.", false); return; }
+    function clearEntryInputs() {
+      $("entryFields").querySelectorAll("input, select").forEach(i => i.value = "");
+    }
 
-      // Réutilise la fiche existante si le nom correspond déjà
-      let person = allPersons.find(p => norm(p.full_name) === norm(raw));
+    $("submitEntryBtn").onclick = async () => {
+      setMsg("entryMsg", "", true);
+      const inputs = [...$("entryFields").querySelectorAll("input, select")];
+      const values = [];
+      for (const f of fields.filter(x => x.field_type !== "signature")) {
+        const el = inputs.find(i => i.dataset.fieldId == f.id);
+        const v = el ? el.value.trim() : "";
+        if (f.required && !v) { setMsg("entryMsg", "Champ obligatoire : " + f.label, false); return; }
+        if (v) values.push({ field: f, value: v });
+      }
+
+      const nameField = fields.find(f => f.field_type === "text" && /nom/i.test(f.label))
+        || fields.find(f => f.field_type === "text");
+      const nameValue = nameField ? (values.find(v => v.field.id === nameField.id) || {}).value : null;
+      if (!nameValue) { setMsg("entryMsg", "Le nom complet est obligatoire.", false); return; }
+
+      // Fiche personne : réutilise la fiche si le nom existe déjà
+      let { data: person } = await db.from("persons")
+        .select("id, full_name").ilike("full_name", nameValue).maybeSingle();
       if (!person) {
         const { data, error } = await db.from("persons")
-          .insert({ full_name: raw }).select("id, full_name").single();
+          .insert({ full_name: nameValue }).select("id, full_name").single();
         if (error) { setMsg("entryMsg", "Création de la fiche impossible : " + error.message, false); return; }
         person = data;
-        allPersons.push(person);
       }
 
       const { data: dup } = await db.from("list_entries")
         .select("id").eq("list_id", currentListId).eq("person_id", person.id).maybeSingle();
       if (dup) { setMsg("entryMsg", "Cette personne est déjà inscrite dans cette liste.", false); return; }
 
-      const { error } = await db.from("list_entries")
-        .insert({ list_id: currentListId, person_id: person.id, full_name: person.full_name });
-      if (error) { setMsg("entryMsg", "Inscription impossible : " + error.message, false); return; }
-
-      const { count } = await db.from("list_entries")
-        .select("id", { count: "exact", head: true }).eq("person_id", person.id);
-      $("pName").value = "";
-      setMsg("entryMsg", "Inscrit. Cette personne est inscrite dans " + (count || 1) + " liste(s).", true);
-      await refreshTotals();
-      await loadEntries();
-    });
-
-    // ---------- Administrateur uniquement ----------
-    $("createListBtn").addEventListener("click", async () => {
-      const title = $("listTitle").value.trim();
-      if (!title) { setMsg("listMsg", "Saisis un titre.", false); return; }
-      const { data, error } = await db.from("lists")
-        .insert({ title: title, description: $("listDesc").value.trim() || null })
+      const { data: entry, error: eErr } = await db.from("list_entries")
+        .insert({ list_id: currentListId, person_id: person.id, full_name: nameValue })
         .select("id").single();
-      if (error) { setMsg("listMsg", "Création impossible : " + error.message, false); return; }
+      if (eErr) { setMsg("entryMsg", "Inscription impossible : " + eErr.message, false); return; }
 
-      $("listTitle").value = "";
-      $("listDesc").value = "";
-      currentListId = data.id;
-      setMsg("listMsg", "Liste créée.", true);
-      await loadLists();
-      $("listSelect").value = currentListId;
-      await loadListView();
-    });
-
-    async function setTime(entryId, field) {
-      const { error } = await db.from("list_entries")
-        .update({ [field]: new Date().toISOString() }).eq("id", entryId);
-      if (error) { alert("Erreur : " + error.message); return; }
-      await refreshTotals();
-      await loadEntries();
-    }
-
-    // ---------- Scan QR code (lecture uniquement) ----------
-    const canvas = document.createElement("canvas");
-    const ctx = canvas.getContext("2d", { willReadFrequently: true });
-
-    async function startScan() {
-      setMsg("scanResult", "", true);
-      try {
-        scanStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-      } catch (e) {
-        setMsg("scanResult", "Caméra non disponible : " + e.message, false);
-        return;
-      }
-      show("scanZone", true);
-      const video = $("video");
-      video.srcObject = scanStream;
-      await video.play();
-      scanning = true;
-      requestAnimationFrame(scanFrame);
-    }
-
-    function scanFrame() {
-      if (!scanning) return;
-      const video = $("video");
-      if (video.readyState === video.HAVE_ENOUGH_DATA) {
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const code = jsQR(img.data, img.width, img.height);
-        if (code && code.data) {
-          stopScan();
-          handleScan(code.data.trim());
-          return;
-        }
-      }
-      requestAnimationFrame(scanFrame);
-    }
-
-    function stopScan() {
-      scanning = false;
-      if (scanStream) scanStream.getTracks().forEach(t => t.stop());
-      scanStream = null;
-      show("scanZone", false);
-    }
-
-    async function handleScan(code) {
-      const { data: entry, error } = await db.from("list_entries")
-        .select("id, full_name, list_id, arrived_at, departed_at")
-        .eq("scan_code", code).maybeSingle();
-
-      if (error) { setMsg("scanResult", "Lecture impossible : " + error.message, false); return; }
-      if (!entry) { setMsg("scanResult", "Code inconnu.", false); return; }
-
-      if (entry.list_id != currentListId) {
-        currentListId = entry.list_id;
-        $("listSelect").value = currentListId;
-        await loadListView();
+      if (values.length) {
+        const { error: vErr } = await db.from("list_field_values").insert(
+          values.map(v => ({ entry_id: entry.id, field_id: v.field.id, value: v.value }))
+        );
+        if (vErr) { setMsg("entryMsg", "Valeurs non enregistrées : " + vErr.message, false); return; }
       }
 
-      if (!entry.arrived_at) {
-        await db.from("list_entries").update({ arrived_at: new Date().toISOString() }).eq("id", entry.id);
-        setMsg("scanResult", "Arrivée enregistrée : " + entry.full_name, true);
-      } else if (!entry.departed_at) {
-        await db.from("list_entries").update({ departed_at: new Date().toISOString() }).eq("id", entry.id);
-        setMsg("scanResult", "Départ enregistré : " + entry.full_name, true);
+      if (fields.some(f => f.field_type === "signature")) {
+        pendingEntry = entry.id;
+        attempts = 0;
+        $("attemptNo").textContent = "1";
+        clearSig();
+        setMsg("sigMsg", "", true);
+        show("sigPanel", true);
+        $("submitEntryBtn").disabled = true;
+        setMsg("entryMsg", "Informations enregistrées. La personne signe ci-dessous.", true);
       } else {
-        setMsg("scanResult", "Déjà pointé (arrivée et départ) : " + entry.full_name, false);
-        return;
+        clearEntryInputs();
+        setMsg("entryMsg", "Inscrit.", true);
+        await afterChange();
       }
-      await refreshTotals();
-      await loadEntries();
+    };
+
+    // ---------- Signature (adultes, trois essais maximum) ----------
+    const sig = $("sigCanvas");
+    const sctx = sig.getContext("2d");
+    sctx.lineWidth = 2.5;
+    sctx.lineCap = "round";
+    sctx.strokeStyle = "#000";
+
+    function sigPos(e) {
+      const r = sig.getBoundingClientRect();
+      return { x: (e.clientX - r.left) * sig.width / r.width, y: (e.clientY - r.top) * sig.height / r.height };
+    }
+    sig.addEventListener("pointerdown", e => {
+      drawing = true;
+      sig.setPointerCapture(e.pointerId);
+      const p = sigPos(e);
+      sctx.beginPath();
+      sctx.moveTo(p.x, p.y);
+    });
+    sig.addEventListener("pointermove", e => {
+      if (!drawing) return;
+      const p = sigPos(e);
+      sctx.lineTo(p.x, p.y);
+      sctx.stroke();
+      sigInk = true;
+    });
+    sig.addEventListener("pointerup", () => drawing = false);
+    sig.addEventListener("pointercancel", () => drawing = false);
+
+    function clearSig() {
+      sctx.clearRect(0, 0, sig.width, sig.height);
+      sigInk = false;
+    }
+    $("sigClearBtn").onclick = clearSig;
+
+    function resetForm(message) {
+      pendingEntry = null;
+      show("sigPanel", false);
+      clearEntryInputs();
+      $("submitEntryBtn").disabled = false;
+      setMsg("entryMsg", message, message.startsWith("Inscription terminée") || message.startsWith("Inscrit"));
     }
 
-    $("scanBtn").addEventListener("click", startScan);
-    $("stopScanBtn").addEventListener("click", stopScan);
+    $("sigOkBtn").onclick = async () => {
+      if (!pendingEntry) return;
+      attempts++;
+      const ok = sigInk;
+      await db.from("signature_attempts").insert({ entry_id: pendingEntry, attempt_no: attempts, succeeded: ok });
+
+      if (ok) {
+        const { error } = await db.from("signatures")
+          .insert({ entry_id: pendingEntry, image_data: sig.toDataURL("image/png") });
+        if (error) { setMsg("sigMsg", "Signature non enregistrée : " + error.message, false); return; }
+        resetForm("Inscription terminée, signature enregistrée.");
+        await afterChange();
+        return;
+      }
+
+      if (attempts >= 3) {
+        resetForm("Inscription enregistrée sans signature (trois essais atteints). Préviens l'administrateur.");
+        await afterChange();
+        return;
+      }
+      $("attemptNo").textContent = String(attempts + 1);
+      setMsg("sigMsg", "Signature vide : recommence.", false);
+      clearSig();
+    };
 
     // ---------- Impression et partage ----------
-    $("printBtn").addEventListener("click", () => window.print());
+    $("printBtn").onclick = () => window.print();
 
-    $("whatsappBtn").addEventListener("click", () => {
-      const list = lists.find(l => l.id == currentListId);
-      if (!list) return;
+    $("waBtn").onclick = () => {
+      if (!currentList) return;
       const lines = [
         "Présence Sécurisée Éducation",
-        "Liste : " + list.title + " (" + fmtDate(list.created_at) + ")",
-        "Personnes inscrites : " + $("listCount").textContent + " — Heures totales : " + $("listHours").textContent,
+        "Liste : " + currentList.title + " (" + fmtDate(currentList.created_at) + ")",
+        "Inscrits : " + $("lCount").textContent + " · Heures : " + $("lHours").textContent,
         ""
       ];
-      currentEntries.forEach(e => {
-        lines.push("- " + e.full_name + " : arrivée " + fmt(e.arrived_at) + ", départ " + fmt(e.departed_at));
-      });
+      entries.forEach(e => lines.push("- " + e.full_name + " : arrivée " + fmt(e.arrived_at) + ", départ " + fmt(e.departed_at)));
       window.open("https://wa.me/?text=" + encodeURIComponent(lines.join("\n")), "_blank");
-    });
+    };
 
     // ---------- Démarrage ----------
     db.auth.getSession().then(({ data }) => {
