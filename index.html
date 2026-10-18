@@ -22,7 +22,7 @@
     .ok { color: #1a7f37; }
     .small { font-size: 13px; color: #555; }
     .entry { border: 1px solid #ddd; border-radius: 6px; padding: 8px; margin: 6px 0; }
-    #dashboard, #login, #adminZone, #listArea, #scanZone { display: none; }
+    #dashboard, #adminZone, #listArea, #scanZone { display: none; }
     video { width: 100%; border-radius: 6px; background: #000; }
     .headerView { border: 1px solid #ddd; border-radius: 6px; padding: 8px; margin: 8px 0; }
     @media print {
@@ -110,6 +110,12 @@
   </div>
 
   <script>
+    // Affiche les erreurs à l'écran pour faciliter le diagnostic
+    window.onerror = (msg, src, line) => { alert("Erreur : " + msg + " (ligne " + line + ")"); };
+    if (typeof supabase === "undefined") {
+      alert("La bibliothèque Supabase ne s'est pas chargée. Vérifie ta connexion et recharge la page.");
+    }
+
     const SUPABASE_URL = "https://uuedkbuebpsefrbecout.supabase.co";
     const SUPABASE_KEY = "sb_publishable_9fA8vQN89sDDkC796XZ7Wg__DdHZrS4";
     const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
@@ -139,3 +145,360 @@
 
     function showLogin() {
       show("dashboard", false);
+      show("login", true);
+    }
+
+    // ---------- Connexion ----------
+    async function enterApp(user) {
+      const { data: profile, error } = await db
+        .from("user_profiles").select("full_name, role").eq("id", user.id).single();
+
+      if (error || !profile) {
+        setMsg("message", "Profil introuvable. Vérifie que le rôle a bien été attribué dans Supabase.", false);
+        await db.auth.signOut();
+        showLogin();
+        return;
+      }
+
+      isAdmin = profile.role === "admin";
+      $("userName").textContent = profile.full_name;
+      $("userRole").textContent = isAdmin ? "administrateur" : "responsable";
+      show("adminZone", isAdmin);
+      show("login", false);
+      show("dashboard", true);
+      setMsg("message", "", true);
+
+      await Promise.all([loadLists(), loadPersons()]);
+      if (isAdmin) await loadGlobalTotals();
+    }
+
+    $("loginBtn").addEventListener("click", async () => {
+      setMsg("message", "", true);
+      const email = $("email").value.trim();
+      const password = $("password").value;
+      const { data, error } = await db.auth.signInWithPassword({ email, password });
+      if (error) { setMsg("message", "Connexion impossible : " + error.message, false); return; }
+      await enterApp(data.user);
+    });
+
+    $("logoutBtn").addEventListener("click", async () => {
+      await db.auth.signOut();
+      stopScan();
+      $("password").value = "";
+      currentListId = null;
+      showLogin();
+    });
+
+    // ---------- Chargement ----------
+    async function loadLists() {
+      const { data, error } = await db.from("lists")
+        .select("id, title, created_at, is_open")
+        .order("created_at", { ascending: false });
+      if (error) { setMsg("listMsg", "Chargement des listes impossible : " + error.message, false); return; }
+
+      lists = data || [];
+      const sel = $("listSelect");
+      sel.innerHTML = "";
+      const first = document.createElement("option");
+      first.value = "";
+      first.textContent = lists.length ? "Choisir une liste" : "Aucune liste pour le moment";
+      sel.appendChild(first);
+
+      lists.forEach(l => {
+        const o = document.createElement("option");
+        o.value = l.id;
+        o.textContent = l.title + " (" + fmtDate(l.created_at) + ")" + (l.is_open ? "" : " - fermée");
+        sel.appendChild(o);
+      });
+
+      if (currentListId && lists.some(l => l.id == currentListId)) {
+        sel.value = currentListId;
+      } else {
+        currentListId = null;
+        show("listArea", false);
+      }
+    }
+
+    async function loadPersons() {
+      const { data } = await db.from("persons").select("id, full_name").order("full_name");
+      allPersons = data || [];
+    }
+
+    async function loadGlobalTotals() {
+      const { data } = await db.from("list_totals").select("registered_count, total_hours");
+      let count = 0, hours = 0;
+      (data || []).forEach(r => { count += Number(r.registered_count); hours += Number(r.total_hours); });
+      $("globalCount").textContent = count;
+      $("globalHours").textContent = hours.toFixed(2);
+    }
+
+    async function loadListView() {
+      const list = lists.find(l => l.id == currentListId);
+      if (!list) { show("listArea", false); return; }
+      show("listArea", true);
+
+      $("listTitleView").textContent = list.title;
+      $("listDate").textContent = "Liste créée le " + fmtDate(list.created_at) + (list.is_open ? "" : " — fermée");
+
+      ["hSchool", "hClass", "hSubject", "hNotes", "saveHeaderBtn", "pName", "addEntryBtn"].forEach(id => {
+        $(id).disabled = !list.is_open;
+      });
+
+      await loadHeader();
+      await refreshTotals();
+      await loadEntries();
+    }
+
+    async function loadHeader() {
+      const { data: h } = await db.from("list_headers").select("*").eq("list_id", currentListId).maybeSingle();
+      $("hSchool").value = h?.school_name || "";
+      $("hClass").value = h?.class_name || "";
+      $("hSubject").value = h?.subject || "";
+      $("hNotes").value = h?.notes || "";
+
+      const lines = [];
+      if (h?.school_name) lines.push("Établissement : " + h.school_name);
+      if (h?.class_name) lines.push("Classe : " + h.class_name);
+      if (h?.subject) lines.push("Matière : " + h.subject);
+      if (h?.notes) lines.push("Notes : " + h.notes);
+      $("headerView").textContent = lines.length ? lines.join("\n") : "En-tête non renseigné.";
+      $("headerView").style.whiteSpace = "pre-line";
+      $("headerDate").textContent = h ? "En-tête mis à jour le " + fmt(h.updated_at) : "";
+    }
+
+    async function refreshTotals() {
+      const { data: t } = await db.from("list_totals")
+        .select("registered_count, total_hours").eq("list_id", currentListId).maybeSingle();
+      $("listCount").textContent = t?.registered_count ?? 0;
+      $("listHours").textContent = t?.total_hours ?? 0;
+      if (isAdmin) await loadGlobalTotals();
+    }
+
+    async function loadEntries() {
+      const box = $("entriesTable");
+      box.innerHTML = "";
+      const { data, error } = await db.from("list_entries")
+        .select("id, full_name, person_id, arrived_at, departed_at, scan_code")
+        .eq("list_id", currentListId)
+        .order("created_at");
+
+      if (error) { box.textContent = "Erreur : " + error.message; return; }
+      currentEntries = data || [];
+      if (!currentEntries.length) { box.textContent = "Aucune personne inscrite pour le moment."; return; }
+
+      const ids = currentEntries.map(e => e.person_id).filter(Boolean);
+      const counts = {};
+      if (ids.length) {
+        const { data: pt } = await db.from("person_presence_totals")
+          .select("person_id, registrations_count").in("person_id", ids);
+        (pt || []).forEach(r => counts[r.person_id] = r.registrations_count);
+      }
+
+      currentEntries.forEach(e => {
+        const card = document.createElement("div");
+        card.className = "entry";
+
+        const name = document.createElement("strong");
+        name.textContent = e.full_name;
+        card.appendChild(name);
+
+        const info = document.createElement("div");
+        info.className = "small";
+        let txt = "Arrivée : " + fmt(e.arrived_at) + " · Départ : " + fmt(e.departed_at);
+        if (counts[e.person_id]) txt += " · inscrit " + counts[e.person_id] + " fois";
+        info.textContent = txt;
+        card.appendChild(info);
+
+        if (isAdmin) {
+          const code = document.createElement("div");
+          code.className = "small no-print";
+          code.textContent = "Code : " + e.scan_code;
+          card.appendChild(code);
+
+          const row = document.createElement("div");
+          row.className = "row no-print";
+          row.appendChild(btn("Arrivée", () => setTime(e.id, "arrived_at")));
+          row.appendChild(btn("Départ", () => setTime(e.id, "departed_at"), "secondary"));
+          card.appendChild(row);
+        }
+        box.appendChild(card);
+      });
+    }
+
+    // ---------- Actions responsable / administrateur ----------
+    $("listSelect").addEventListener("change", async () => {
+      currentListId = $("listSelect").value || null;
+      if (currentListId) await loadListView(); else show("listArea", false);
+    });
+
+    $("saveHeaderBtn").addEventListener("click", async () => {
+      const payload = {
+        list_id: currentListId,
+        school_name: $("hSchool").value.trim() || null,
+        class_name: $("hClass").value.trim() || null,
+        subject: $("hSubject").value.trim() || null,
+        notes: $("hNotes").value.trim() || null
+      };
+      const { error } = await db.from("list_headers").upsert(payload, { onConflict: "list_id" });
+      if (error) { setMsg("headerMsg", "Enregistrement impossible : " + error.message, false); return; }
+      setMsg("headerMsg", "En-tête enregistré.", true);
+      await loadHeader();
+    });
+
+    $("addEntryBtn").addEventListener("click", async () => {
+      const raw = $("pName").value.trim();
+      if (!raw) { setMsg("entryMsg", "Saisis un nom.", false); return; }
+
+      // Réutilise la fiche existante si le nom correspond déjà
+      let person = allPersons.find(p => norm(p.full_name) === norm(raw));
+      if (!person) {
+        const { data, error } = await db.from("persons")
+          .insert({ full_name: raw }).select("id, full_name").single();
+        if (error) { setMsg("entryMsg", "Création de la fiche impossible : " + error.message, false); return; }
+        person = data;
+        allPersons.push(person);
+      }
+
+      const { data: dup } = await db.from("list_entries")
+        .select("id").eq("list_id", currentListId).eq("person_id", person.id).maybeSingle();
+      if (dup) { setMsg("entryMsg", "Cette personne est déjà inscrite dans cette liste.", false); return; }
+
+      const { error } = await db.from("list_entries")
+        .insert({ list_id: currentListId, person_id: person.id, full_name: person.full_name });
+      if (error) { setMsg("entryMsg", "Inscription impossible : " + error.message, false); return; }
+
+      const { count } = await db.from("list_entries")
+        .select("id", { count: "exact", head: true }).eq("person_id", person.id);
+      $("pName").value = "";
+      setMsg("entryMsg", "Inscrit. Cette personne est inscrite dans " + (count || 1) + " liste(s).", true);
+      await refreshTotals();
+      await loadEntries();
+    });
+
+    // ---------- Administrateur uniquement ----------
+    $("createListBtn").addEventListener("click", async () => {
+      const title = $("listTitle").value.trim();
+      if (!title) { setMsg("listMsg", "Saisis un titre.", false); return; }
+      const { data, error } = await db.from("lists")
+        .insert({ title: title, description: $("listDesc").value.trim() || null })
+        .select("id").single();
+      if (error) { setMsg("listMsg", "Création impossible : " + error.message, false); return; }
+
+      $("listTitle").value = "";
+      $("listDesc").value = "";
+      currentListId = data.id;
+      setMsg("listMsg", "Liste créée.", true);
+      await loadLists();
+      $("listSelect").value = currentListId;
+      await loadListView();
+    });
+
+    async function setTime(entryId, field) {
+      const { error } = await db.from("list_entries")
+        .update({ [field]: new Date().toISOString() }).eq("id", entryId);
+      if (error) { alert("Erreur : " + error.message); return; }
+      await refreshTotals();
+      await loadEntries();
+    }
+
+    // ---------- Scan QR code (lecture uniquement) ----------
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+
+    async function startScan() {
+      setMsg("scanResult", "", true);
+      try {
+        scanStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+      } catch (e) {
+        setMsg("scanResult", "Caméra non disponible : " + e.message, false);
+        return;
+      }
+      show("scanZone", true);
+      const video = $("video");
+      video.srcObject = scanStream;
+      await video.play();
+      scanning = true;
+      requestAnimationFrame(scanFrame);
+    }
+
+    function scanFrame() {
+      if (!scanning) return;
+      const video = $("video");
+      if (video.readyState === video.HAVE_ENOUGH_DATA) {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const code = jsQR(img.data, img.width, img.height);
+        if (code && code.data) {
+          stopScan();
+          handleScan(code.data.trim());
+          return;
+        }
+      }
+      requestAnimationFrame(scanFrame);
+    }
+
+    function stopScan() {
+      scanning = false;
+      if (scanStream) scanStream.getTracks().forEach(t => t.stop());
+      scanStream = null;
+      show("scanZone", false);
+    }
+
+    async function handleScan(code) {
+      const { data: entry, error } = await db.from("list_entries")
+        .select("id, full_name, list_id, arrived_at, departed_at")
+        .eq("scan_code", code).maybeSingle();
+
+      if (error) { setMsg("scanResult", "Lecture impossible : " + error.message, false); return; }
+      if (!entry) { setMsg("scanResult", "Code inconnu.", false); return; }
+
+      if (entry.list_id != currentListId) {
+        currentListId = entry.list_id;
+        $("listSelect").value = currentListId;
+        await loadListView();
+      }
+
+      if (!entry.arrived_at) {
+        await db.from("list_entries").update({ arrived_at: new Date().toISOString() }).eq("id", entry.id);
+        setMsg("scanResult", "Arrivée enregistrée : " + entry.full_name, true);
+      } else if (!entry.departed_at) {
+        await db.from("list_entries").update({ departed_at: new Date().toISOString() }).eq("id", entry.id);
+        setMsg("scanResult", "Départ enregistré : " + entry.full_name, true);
+      } else {
+        setMsg("scanResult", "Déjà pointé (arrivée et départ) : " + entry.full_name, false);
+        return;
+      }
+      await refreshTotals();
+      await loadEntries();
+    }
+
+    $("scanBtn").addEventListener("click", startScan);
+    $("stopScanBtn").addEventListener("click", stopScan);
+
+    // ---------- Impression et partage ----------
+    $("printBtn").addEventListener("click", () => window.print());
+
+    $("whatsappBtn").addEventListener("click", () => {
+      const list = lists.find(l => l.id == currentListId);
+      if (!list) return;
+      const lines = [
+        "Présence Sécurisée Éducation",
+        "Liste : " + list.title + " (" + fmtDate(list.created_at) + ")",
+        "Personnes inscrites : " + $("listCount").textContent + " — Heures totales : " + $("listHours").textContent,
+        ""
+      ];
+      currentEntries.forEach(e => {
+        lines.push("- " + e.full_name + " : arrivée " + fmt(e.arrived_at) + ", départ " + fmt(e.departed_at));
+      });
+      window.open("https://wa.me/?text=" + encodeURIComponent(lines.join("\n")), "_blank");
+    });
+
+    // ---------- Démarrage ----------
+    db.auth.getSession().then(({ data }) => {
+      if (data.session) enterApp(data.session.user);
+    });
+  </script>
+</body>
+</html>
